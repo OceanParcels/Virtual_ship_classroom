@@ -23,6 +23,8 @@ NEW_SPEED = "8.0"
 NEW_LAT = "0.015"
 NEW_LON = "0.015"
 
+# TODO: new test that the check that there's Ports works
+
 
 def _make_expedition(
     tmpdir: Path,
