@@ -250,7 +250,7 @@ def _mfp_string_to_timedelta(value: str | None) -> timedelta | None:
 
 
 def _validate_start_date(ctx, param, value):
-    """Callback to enforce and validate --start-date when --from-mfp is used."""
+    """Enforce --start-date when --from-mfp is used."""
     if ctx.params.get("from_mfp"):
         if not value:
             raise click.BadParameter(

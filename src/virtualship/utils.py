@@ -459,18 +459,21 @@ def _get_waypoint_latlons(waypoints):
 
 def _get_instrument_relevant_waypoints(waypoints, instrument_type) -> list:
     """Subset of waypoints that are relevant to this `instrument_type`."""
+    from virtualship.models import Port  # avoid circular import problems
+
     if instrument_type.is_underway:
         return list(waypoints)
 
     relevant = []
     for wp in waypoints:
-        wp_instruments = (
-            wp.instrument
-            if isinstance(wp.instrument, list)
-            else ([wp.instrument] if wp.instrument else [])
-        )
-        if instrument_type in wp_instruments:
-            relevant.append(wp)
+        if not isinstance(wp, Port):
+            wp_instruments = (
+                wp.instrument
+                if isinstance(wp.instrument, list)
+                else ([wp.instrument] if wp.instrument else [])
+            )
+            if instrument_type in wp_instruments:
+                relevant.append(wp)
 
     return relevant or list(waypoints)
 
@@ -555,6 +558,25 @@ def build_particle_class_from_sensors(
     ]
 
     return Particle.add_variable(nonsensor_variables + sensor_variables)
+
+
+def _get_public_wp(raw_wp_i: int | None, waypoints: list) -> int | None:
+    """
+    Get the public waypoint number for a given raw waypoint index (accounting for Port waypoints).
+
+    Note, the returned number is not an index, rather it corresponds to Waypoint numbers ignoring Ports (which are not waypoints from the user's perspective).
+    """
+    from virtualship.models.expedition import Port  # avoid circular import
+
+    port_wps = [i for i, wp in enumerate(waypoints) if isinstance(wp, Port)]
+    non_port_wps = [i for i in range(len(waypoints)) if i not in port_wps]
+
+    if raw_wp_i in port_wps:
+        public_wp = None  # Port waypoints do not have public waypoint numbers
+    else:
+        public_wp = non_port_wps.index(raw_wp_i) + 1
+
+    return public_wp
 
 
 # =====================================================
