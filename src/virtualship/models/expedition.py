@@ -54,6 +54,7 @@ class Expedition(pydantic.BaseModel):
     def get_instruments(self) -> set[InstrumentType]:
         """Return a set of unique InstrumentType enums used in the expedition."""
         instruments_in_expedition = []
+
         # from waypoints
         for waypoint in self.schedule.waypoints:
             if isinstance(waypoint, Port):
@@ -117,6 +118,18 @@ class Schedule(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(extra="forbid")
 
+    @pydantic.field_validator("waypoints", mode="after")
+    @classmethod
+    def _wp_ports(cls, value: list[Port | Waypoint]) -> None:
+        """First and last waypoints are Ports, plus has at least one non-port waypoint."""
+        if not isinstance(value[0], Port) & isinstance(value[-1], Port):
+            raise ScheduleError(
+                "First and last waypoints must be Ports (of arrival/departure)."
+            )
+        if not any(isinstance(wp, Waypoint) for wp in value):
+            raise ScheduleError("At least one non-port waypoint must be provided.")
+        return value
+
     def verify(
         self,
         ship_speed: float,
@@ -127,15 +140,6 @@ class Schedule(pydantic.BaseModel):
     ) -> None:
         """Verify the feasibility and correctness of the schedule's waypoints."""
         print("\nVerifying route... ")
-
-        # first and last waypoints are Ports
-        assert isinstance(self.waypoints[0], Port) & isinstance(
-            self.waypoints[-1], Port
-        ), "First and last waypoints must be Ports."
-
-        # has at least one non-port waypoint
-        if not any(isinstance(wp, Waypoint) for wp in self.waypoints):
-            raise ScheduleError("At least one non-port waypoint must be provided.")
 
         # check departure port has a time
         if self.waypoints[0].time is None:
