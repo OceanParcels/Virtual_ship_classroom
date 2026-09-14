@@ -166,12 +166,7 @@ def _argo_sample_temperature(particles, fieldset):
     phase_mask = particles.cycle_phase == 3
     depth_mask = particles.z < particles.min_depth  # still ascending
     sampling_particles = particles[np.logical_and(phase_mask, depth_mask)]
-    sampling_particles.temperature = fieldset.T[
-        sampling_particles.t,
-        sampling_particles.z,
-        sampling_particles.y,
-        sampling_particles.x,
-    ]
+    sampling_particles.temperature = fieldset.T[sampling_particles]
 
 
 def _argo_sample_salinity(particles, fieldset):
@@ -179,12 +174,7 @@ def _argo_sample_salinity(particles, fieldset):
     phase_mask = particles.cycle_phase == 3
     depth_mask = particles.z < particles.min_depth  # still ascending
     sampling_particles = particles[np.logical_and(phase_mask, depth_mask)]
-    sampling_particles.salinity = fieldset.S[
-        sampling_particles.t,
-        sampling_particles.z,
-        sampling_particles.y,
-        sampling_particles.x,
-    ]
+    sampling_particles.salinity = fieldset.S[sampling_particles]
 
 
 # =====================================================
@@ -285,7 +275,7 @@ class ArgoFloatInstrument(Instrument):
         shallow_waypoints = {}
         for i, m in enumerate(measurements):
             loc_bathy = fieldset.bathymetry.eval(
-                t=np.float64(0),
+                t=0,
                 z=0,
                 y=m.spacetime.location.lat,
                 x=m.spacetime.location.lon,
@@ -319,7 +309,7 @@ class ArgoFloatInstrument(Instrument):
             y=[argo.spacetime.location.lat for argo in measurements],
             x=[argo.spacetime.location.lon for argo in measurements],
             z=[min(argo.min_depth, grid_shallowest) for argo in measurements],
-            t=[np.datetime64(argo.spacetime.time) for argo in measurements],
+            t=[argo.spacetime.time for argo in measurements],
             min_depth=[min(argo.min_depth, grid_shallowest) for argo in measurements],
             max_depth=[argo.max_depth for argo in measurements],
             drift_depth=[argo.drift_depth for argo in measurements],

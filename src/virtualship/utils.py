@@ -435,7 +435,7 @@ def _compute_max_depths(measurements, fieldset) -> list[float]:
                 z=0,
                 y=m.spacetime.location.lat,
                 x=m.spacetime.location.lon,
-                t=np.float64(0),
+                t=0,
             )[0],
         )
         for m in measurements
