@@ -52,12 +52,18 @@ class ADCPInstrument(UnderwayInstrument):
         """Initialize ADCPInstrument."""
         variables = expedition.instruments_config.adcp_config.active_variables()
 
+        # TODO: this may be unnecessary for performance optimisation now that _via_tmp_ds() is not being used for underway instruments (see base.py)?
+        fetch_spec = FetchSpec(
+            depth_min=0,  # ensures copernicusmarine fetches properly
+            depth_max=expedition.instruments_config.adcp_config.max_depth_meter,
+        )
+
         super().__init__(
             expedition,
             variables,
             add_bathymetry=False,
             verbose_progress=False,
-            fetch_spec=FetchSpec(),
+            fetch_spec=fetch_spec,
             from_data=from_data,
         )
 
