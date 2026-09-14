@@ -43,6 +43,7 @@ from virtualship.models import (
     Waypoint,
     XBTConfig,
 )
+from virtualship.models.expedition import Port
 from virtualship.utils import EXPEDITION, _get_waypoint_latlons
 
 UNEXPECTED_MSG_ONSAVE = (
@@ -613,10 +614,13 @@ class ExpeditionEditor(Static):
 
     @on(Button.Pressed, "#add_waypoint")
     def add_waypoint(self) -> None:
-        """Add a new waypoint to the schedule. Copies time from last waypoint if possible (Lat/lon and instruments blank)."""
+        """Add a new waypoint to the schedule (N.B. ports always remain). Copies time from last waypoint if possible (Lat/lon and instruments blank)."""
         try:
-            if self.expedition.schedule.waypoints:
-                last_wp = self.expedition.schedule.waypoints[-1]
+            #! TODO: add check that any schedule ingested by Plan has ports!
+            wps = self.expedition.schedule.waypoints
+            if wps:
+                non_port_wps = [wp for wp in wps if not isinstance(wp, Port)]
+                last_wp = non_port_wps[-1]
                 new_time = last_wp.time if last_wp.time else None
                 new_wp = Waypoint(
                     location=Location(
@@ -632,7 +636,12 @@ class ExpeditionEditor(Static):
                     time=None,
                     instrument=[],
                 )
-            self.expedition.schedule.waypoints.append(new_wp)
+
+            # add waypoint before the last port (arrival port) if it exists, otherwise at the end
+            insert_index = next(
+                (i for i, wp in reversed(list(enumerate(wps))) if isinstance(wp, Port))
+            )  # just before arrival port
+            self.expedition.schedule.waypoints.insert(insert_index, new_wp)
             self.refresh_waypoint_widgets()
 
         except Exception as e:
@@ -640,10 +649,18 @@ class ExpeditionEditor(Static):
 
     @on(Button.Pressed, "#remove_waypoint")
     def remove_waypoint(self) -> None:
-        """Remove the last waypoint from the schedule."""
+        """Remove the last waypoint (non-port) from the schedule."""
         try:
-            if self.expedition.schedule.waypoints:
-                self.expedition.schedule.waypoints.pop()
+            wps = self.expedition.schedule.waypoints
+            if wps:
+                last_wp_index = next(
+                    (
+                        i
+                        for i, wp in reversed(list(enumerate(wps)))
+                        if isinstance(wp, Waypoint)
+                    )
+                )
+                self.expedition.schedule.waypoints.pop(last_wp_index)
                 self.refresh_waypoint_widgets()
             else:
                 self.notify("No waypoints to remove.", severity="error", timeout=5)
@@ -748,150 +765,146 @@ class WaypointWidget(Static):
         self.waypoint = waypoint
         self.index = index
 
+    def _get_coord_value(self, coord: float | None) -> str:
+        """Return coordinate as string or empty string if None."""
+        return str(coord) if coord is not None else ""
+
+    def _get_minute_options(self) -> list[tuple[str, int]]:
+        """Generate minute options, inserting current minute if non-multiple of 5."""
+        options = {(f"{m:02d}", m) for m in range(0, 60, 5)}
+        if self.waypoint.time and self.waypoint.time.minute % 5 != 0:
+            m = self.waypoint.time.minute
+            options.add((f"{m:02d}", m))
+        return sorted(list(options), key=lambda x: x[1])
+
+    def _yield_coordinate_input(
+        self, label: str, field: str, validator_fn, placeholder: str, wp_id: int
+    ) -> ComposeResult:
+        """Yields a labeled coordinate input with its validation error label."""
+        val = getattr(self.waypoint.location, field, None)
+
+        yield Label(f"    {label}:")
+        yield Input(
+            id=f"wp{wp_id}_{field}",
+            value=self._get_coord_value(val),
+            validators=[
+                Function(
+                    validator_fn,
+                    f"INVALID: value must be {validator_fn.__doc__.lower()}",
+                )
+            ],
+            type="number",
+            placeholder=placeholder,
+            classes=f"{field}itude-input",
+        )
+        yield Label(
+            "",
+            id=f"validation-failure-label-wp{wp_id}_{field}",
+            classes="-hidden validation-failure",
+        )
+
+    def _yield_time_selectors(self, wp_id: int) -> ComposeResult:
+        """Yields year, month, day, hour, and minute Select controls."""
+        time = self.waypoint.time
+
+        yield Label("Year:")
+        yield Select(
+            [(str(y), y) for y in range(1993, datetime.datetime.now().year + 1)],
+            id=f"wp{wp_id}_year",
+            value=time.year if time else Select.NULL,
+            prompt="YYYY",
+            classes="year-select",
+        )
+        yield Label("Month:")
+        yield Select(
+            [(f"{m:02d}", m) for m in range(1, 13)],
+            id=f"wp{wp_id}_month",
+            value=time.month if time else Select.NULL,
+            prompt="MM",
+            classes="month-select",
+        )
+        yield Label("Day:")
+        yield Select(
+            [(f"{d:02d}", d) for d in range(1, 32)],
+            id=f"wp{wp_id}_day",
+            value=time.day if time else Select.NULL,
+            prompt="DD",
+            classes="day-select",
+        )
+        yield Label("Hour:")
+        yield Select(
+            [(f"{h:02d}", h) for h in range(24)],
+            id=f"wp{wp_id}_hour",
+            value=time.hour if time else Select.NULL,
+            prompt="hh",
+            classes="hour-select",
+        )
+        yield Label("Min:")
+        yield Select(
+            self._get_minute_options(),
+            id=f"wp{wp_id}_minute",
+            value=time.minute if time else Select.NULL,
+            prompt="mm",
+            classes="minute-select",
+        )
+
+    def _yield_instrument_controls(self, wp_id: int) -> ComposeResult:
+        """Yields instrument controls if waypoint is not a Port."""
+        yield Label("Instruments:")
+
+        for instrument in [i for i in InstrumentType if not i.is_underway]:
+            is_selected = instrument in (self.waypoint.instrument or [])
+            with Horizontal():
+                yield Label(instrument.value)
+                # Matches expected #inst_<INSTRUMENT> prefix or wp-indexed switch ID
+                yield Switch(
+                    value=is_selected,
+                    id=f"wp{wp_id}_{instrument.value}",
+                )
+
+                if instrument.value == "DRIFTER":
+                    yield Label("Count")
+                    yield Input(
+                        id=f"wp{wp_id}_drifter_count",
+                        value=str(self.get_drifter_count() if is_selected else ""),
+                        type="integer",
+                        placeholder="# of drifters",
+                        validators=Integer(
+                            minimum=1,
+                            failure_description="INVALID: value must be > 0",
+                        ),
+                        classes="drifter-count-input",
+                    )
+                    yield Label(
+                        "",
+                        id=f"validation-failure-label-wp{wp_id}_drifter_count",
+                        classes="-hidden validation-failure",
+                    )
+
     def compose(self) -> ComposeResult:
         try:
             with Collapsible(
-                title=f"[b]Waypoint {self.index + 1}[/b]",
-                collapsed=True,
-                id=f"wp{self.index + 1}",
+                title=self.get_title(), collapsed=True, id=f"wp{self.index}"
             ):
                 if self.index > 0:
                     yield Button(
-                        "Copy Time & Instruments from Previous",
+                        self.get_copy_button_text(),
                         id=f"wp{self.index}_copy",
                         variant="warning",
                     )
-                yield Label("Location:")
-                yield Label("    Latitude:")
-                yield Input(
-                    id=f"wp{self.index}_lat",
-                    value=str(self.waypoint.location.lat)
-                    if self.waypoint.location.lat
-                    is not None  # is not None to handle if lat is 0.0
-                    else "",
-                    validators=[
-                        Function(
-                            is_valid_lat,
-                            f"INVALID: value must be {is_valid_lat.__doc__.lower()}",
-                        )
-                    ],
-                    type="number",
-                    placeholder="°N",
-                    classes="latitude-input",
-                )
-                yield Label(
-                    "",
-                    id=f"validation-failure-label-wp{self.index}_lat",
-                    classes="-hidden validation-failure",
-                )
 
-                yield Label("    Longitude:")
-                yield Input(
-                    id=f"wp{self.index}_lon",
-                    value=str(self.waypoint.location.lon)
-                    if self.waypoint.location.lon
-                    is not None  # is not None to handle if lon is 0.0
-                    else "",
-                    validators=[
-                        Function(
-                            is_valid_lon,
-                            f"INVALID: value must be {is_valid_lon.__doc__.lower()}",
-                        )
-                    ],
-                    type="number",
-                    placeholder="°E",
-                    classes="longitude-input",
+                yield Label("Location:")
+                yield from self._yield_coordinate_input(
+                    "Latitude", "lat", is_valid_lat, "°N", self.index
                 )
-                yield Label(
-                    "",
-                    id=f"validation-failure-label-wp{self.index}_lon",
-                    classes="-hidden validation-failure",
+                yield from self._yield_coordinate_input(
+                    "Longitude", "lon", is_valid_lon, "°E", self.index
                 )
 
                 yield Label("Time:")
                 with Horizontal():
-                    yield Label("Year:")
-                    yield Select(
-                        [
-                            (str(year), year)
-                            for year in range(
-                                1993,
-                                datetime.datetime.now().year + 1,
-                            )
-                        ],
-                        id=f"wp{self.index}_year",
-                        value=int(self.waypoint.time.year)
-                        if self.waypoint.time
-                        else Select.NULL,
-                        prompt="YYYY",
-                        classes="year-select",
-                    )
-                    yield Label("Month:")
-                    yield Select(
-                        [(f"{m:02d}", m) for m in range(1, 13)],
-                        id=f"wp{self.index}_month",
-                        value=int(self.waypoint.time.month)
-                        if self.waypoint.time
-                        else Select.NULL,
-                        prompt="MM",
-                        classes="month-select",
-                    )
-                    yield Label("Day:")
-                    yield Select(
-                        [(f"{d:02d}", d) for d in range(1, 32)],
-                        id=f"wp{self.index}_day",
-                        value=int(self.waypoint.time.day)
-                        if self.waypoint.time
-                        else Select.NULL,
-                        prompt="DD",
-                        classes="day-select",
-                    )
-                    yield Label("Hour:")
-                    yield Select(
-                        [(f"{h:02d}", h) for h in range(24)],
-                        id=f"wp{self.index}_hour",
-                        value=int(self.waypoint.time.hour)
-                        if self.waypoint.time
-                        else Select.NULL,
-                        prompt="hh",
-                        classes="hour-select",
-                    )
-                    yield Label("Min:")
-                    minute_options = [(f"{m:02d}", m) for m in range(0, 60, 5)]
-                    minute_value = (
-                        int(self.waypoint.time.minute)
-                        if self.waypoint.time
-                        else Select.NULL
-                    )
+                    yield from self._yield_time_selectors(self.index)
 
-                    # if the current minute is not a multiple of 5, add it to the options
-                    if (
-                        self.waypoint.time
-                        and self.waypoint.time.minute % 5 != 0
-                        and (
-                            f"{self.waypoint.time.minute:02d}",
-                            self.waypoint.time.minute,
-                        )
-                        not in minute_options
-                    ):
-                        minute_options = [
-                            (
-                                f"{self.waypoint.time.minute:02d}",
-                                self.waypoint.time.minute,
-                            )
-                        ] + minute_options
-
-                    minute_options = sorted(minute_options, key=lambda x: x[1])
-
-                    yield Select(
-                        minute_options,
-                        id=f"wp{self.index}_minute",
-                        value=minute_value,
-                        prompt="mm",
-                        classes="minute-select",
-                    )
-
-                # fmt: off
                 yield Horizontal(
                     Button("+1 day", id="plus_one_day", variant="primary"),
                     Button("+1 hour", id="plus_one_hour", variant="primary"),
@@ -901,46 +914,31 @@ class WaypointWidget(Static):
                     Button("-30 minutes", id="minus_thirty_minutes", variant="default"),
                     classes="time-adjust-buttons",
                 )
-                # fmt: on
 
-                yield Label("Instruments:")
-                for instrument in [i for i in InstrumentType if not i.is_underway]:
-                    is_selected = instrument in (self.waypoint.instrument or [])
-                    with Horizontal():
-                        yield Label(instrument.value)
-                        yield Switch(
-                            value=is_selected, id=f"wp{self.index}_{instrument.value}"
+                if not isinstance(self.waypoint, Port):
+                    yield from self._yield_instrument_controls()
+                    yield Horizontal(
+                        Button(
+                            "Remove Waypoint",
+                            id=f"wp{self.index}_remove",
+                            variant="error",
                         )
-
-                        if instrument.value == "DRIFTER":
-                            yield Label("Count")
-                            yield Input(
-                                id=f"wp{self.index}_drifter_count",
-                                value=str(
-                                    self.get_drifter_count() if is_selected else ""
-                                ),
-                                type="integer",
-                                placeholder="# of drifters",
-                                validators=Integer(
-                                    minimum=1,
-                                    failure_description="INVALID: value must be > 0",
-                                ),
-                                classes="drifter-count-input",
-                            )
-                            yield Label(
-                                "",
-                                id=f"validation-failure-label-wp{self.index}_drifter_count",
-                                classes="-hidden validation-failure",
-                            )
-
-                yield Horizontal(
-                    Button(
-                        "Remove Waypoint", id=f"wp{self.index}_remove", variant="error"
                     )
-                )
 
         except Exception as e:
             raise UnexpectedError(unexpected_msg_compose(e)) from None
+
+    def get_title(self) -> str:
+        if isinstance(self.waypoint, Port):
+            return "Port of Departure" if self.index == 0 else "Port of Arrival"
+        else:
+            return f"Waypoint {self.index}"
+
+    def get_copy_button_text(self) -> str:
+        if isinstance(self.waypoint, Port):
+            return "Copy Time from Previous"
+        else:
+            return "Copy Time & Instruments from Previous"
 
     def get_drifter_count(self) -> int:
         return sum(
@@ -968,17 +966,20 @@ class WaypointWidget(Static):
                             else:
                                 curr.value = prev.value
 
-                    for instrument in [
-                        inst for inst in InstrumentType if not inst.is_underway
-                    ]:
-                        prev_switch = schedule_editor.query_one(
-                            f"#wp{self.index - 1}_{instrument.value}"
-                        )
-                        curr_switch = self.query_one(
-                            f"#wp{self.index}_{instrument.value}"
-                        )
-                        if prev_switch and curr_switch:
-                            curr_switch.value = prev_switch.value
+                    if not isinstance(
+                        self.waypoint, Port
+                    ):  # only copy instruments for non-port waypoints
+                        for instrument in [
+                            inst for inst in InstrumentType if not inst.is_underway
+                        ]:
+                            prev_switch = schedule_editor.query_one(
+                                f"#wp{self.index - 1}_{instrument.value}"
+                            )
+                            curr_switch = self.query_one(
+                                f"#wp{self.index}_{instrument.value}"
+                            )
+                            if prev_switch and curr_switch:
+                                curr_switch.value = prev_switch.value
 
                     # hard update self.waypoint.time to match new values as shown in UI
                     year = int(self.query_one(f"#wp{self.index}_year").value)

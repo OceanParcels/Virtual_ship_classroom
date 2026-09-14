@@ -16,10 +16,11 @@ from virtualship.instruments.xbt import XBT
 from virtualship.models import (
     Expedition,
     Location,
+    Port,
     Spacetime,
     Waypoint,
 )
-from virtualship.utils import _calc_sail_time
+from virtualship.utils import _calc_sail_time, _get_public_wp
 
 
 @dataclass
@@ -35,7 +36,7 @@ class ScheduleProblem:
     """Result of schedule that could not be fully completed."""
 
     time: datetime
-    failed_waypoint_i: int
+    failed_wp: int
 
 
 @dataclass
@@ -102,7 +103,7 @@ class _ScheduleSimulator:
         self._expedition = expedition
 
         assert self._expedition.schedule.waypoints[0].time is not None, (
-            "First waypoint must have a time. This should have been verified before calling this function."
+            "Departure port must have a time."
         )
         self._time = expedition.schedule.waypoints[0].time
         self._location = expedition.schedule.waypoints[0].location
@@ -122,8 +123,9 @@ class _ScheduleSimulator:
             # check if waypoint was reached in time
             # TODO: already tested in schedule.verify(), re-check here for robustness but could be removed if deemed redundant
             if waypoint.time is not None and self._time > waypoint.time:
+                public_wp = _get_public_wp(wp_i, self._expedition.schedule.waypoints)
                 print(
-                    f"\nWaypoint {wp_i + 1} could not be reached in time. Current time: {self._time}. Waypoint time: {waypoint.time}."
+                    f"\nWaypoint {public_wp} could not be reached in time. Current time: {self._time}. Waypoint time: {waypoint.time}."
                     "\n\nHave you ensured that your schedule includes sufficient time for taking measurements, e.g. CTD casts (in addition to the time it takes to sail between waypoints)?\n"
                 )
                 return ScheduleProblem(self._time, wp_i)
@@ -133,7 +135,7 @@ class _ScheduleSimulator:
                 )  # wait at the waypoint until ship is scheduled to be there
 
             # note measurements made at waypoint
-            time_passed = self._make_measurements(waypoint)
+            time_passed = self._get_instrument_timescosts(waypoint)
 
             # wait while measurements are being done
             self._progress_time_stationary(time_passed)
@@ -247,9 +249,13 @@ class _ScheduleSimulator:
             for i in range(1, int(npts) + 1)
         ]
 
-    def _make_measurements(self, waypoint: Waypoint) -> timedelta:
-        # if there are no instruments, there is no time cost
-        if waypoint.instrument is None:
+    def _get_instrument_timescosts(self, waypoint: Waypoint | Port) -> timedelta:
+        # port stops have no instruments; if there are no instruments, there is no time cost
+        if isinstance(waypoint, Port):
+            return timedelta()
+
+        # if proper waypoint but there are no instruments, there is no time cost
+        if isinstance(waypoint, Waypoint) and waypoint.instrument is None:
             return timedelta()
 
         # make instruments a list even if it's only a single one
