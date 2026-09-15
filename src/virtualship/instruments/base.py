@@ -194,12 +194,10 @@ class Instrument(abc.ABC):
         TODO: the need for this step may be removed as Parcels x copernicusmarine integration improves, tracked in https://github.com/Parcels-code/Parcels/issues/2756 and xref'd in VirtualShip #357 (https://github.com/Parcels-code/virtualship/issues/357)
         """
         combined_fieldset = None
-        keys = list(self.variables.keys())
-
         time_buffer = self.fetch_spec.time_buffer
+        is_underway = self.instrument_type.is_underway
 
-        for key in keys:
-            var = self.variables[key]
+        for key, var in self.variables.items():
             physical = var in COPERNICUSMARINE_PHYS_VARIABLES
 
             if self.from_data is not None:  # load from local data
@@ -228,16 +226,15 @@ class Instrument(abc.ABC):
             fields = {key: ds[field_var_name]}
             ds_fset = parcels.convert.copernicusmarine_to_sgrid(fields=fields)
 
-            # streaming data performance is improved by writing to a temporary file, unnecessary for local data
-            if self.from_data is None:
-                ds_fset = self._via_tmp_ds(ds_fset)
+            # operations only necessary for non-underway instruments
+            if not is_underway:
+                fs = parcels.FieldSet.from_sgrid_conventions(ds_fset)
 
-            fs = parcels.FieldSet.from_sgrid_conventions(ds_fset)
+                # to ChunkCachedArrays for better Dask/memory management
+                fs = fs.to_chunk_cached_arrays()
 
-            # non-underway instruments to windowed arrays, just in case any ds is Dask backed
-            # underway instruments should not to converted to windowed arrays, as they use one direct fieldset.eval() call which could cause a big memory usage if the fieldset is windowed
-            if not self.instrument_type.is_underway:
-                fs = fs.to_windowed_arrays()
+            else:
+                fs = parcels.FieldSet.from_sgrid_conventions(ds_fset)
 
             combined_fieldset = combined_fieldset + fs if combined_fieldset else fs
 
