@@ -3,7 +3,6 @@ from __future__ import annotations
 import abc
 import collections
 import inspect
-import tempfile
 from dataclasses import dataclass
 from datetime import timedelta
 from itertools import pairwise
@@ -83,7 +82,6 @@ class Instrument(abc.ABC):
         self.add_bathymetry = add_bathymetry
         self.verbose_progress = verbose_progress
         self.fetch_spec = fetch_spec or FetchSpec()
-        self._tmp_dirs: list[tempfile.TemporaryDirectory] = []
 
         # only waypoints relevant to this instrument; avoid needlessly ballooning fieldset to full expedition schedule
         relevant_waypoints = _get_instrument_relevant_waypoints(
@@ -103,26 +101,6 @@ class Instrument(abc.ABC):
         )  # avoid edge issues
         self.min_lat, self.max_lat = min(wp_lats), max(wp_lats)
         self.min_lon, self.max_lon = min(wp_lons), max(wp_lons)
-
-    def close(self):
-        """Explicitly cleanup all tmp dirs."""
-        tmp_dirs = getattr(self, "_tmp_dirs", None)
-        if not tmp_dirs:
-            return
-        for tmp_dir in tmp_dirs:
-            try:
-                tmp_dir.cleanup()
-            except Exception:
-                pass  # i.e. best effort clean up
-        self._tmp_dirs = []
-
-    def __enter__(self):
-        """Enter the context manager."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit context manager, ensuring resource cleanup."""
-        self.close()
 
     def load_input_data(self) -> parcels.FieldSet:
         """Load and return the input data as a FieldSet for the instrument."""
