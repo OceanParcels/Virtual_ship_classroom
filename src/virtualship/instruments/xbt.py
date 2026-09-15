@@ -52,9 +52,7 @@ _XBT_NONSENSOR_VARIABLES = [
 
 
 def _sample_temperature(particles, fieldset):
-    particles.temperature = fieldset.T[
-        particles.t, particles.z, particles.y, particles.x
-    ]
+    particles.temperature = fieldset.T[particles]
 
 
 def _xbt_cast(particles, fieldset):
@@ -67,16 +65,12 @@ def _xbt_cast(particles, fieldset):
     )
 
     # delete particle if depth is exactly max_depth
-    particles.state = np.where(
-        particles.z == particles.max_depth, StatusCode.Delete, particles.state
-    )
+    finished = particles.z == particles.max_depth
+    particles.state[finished] = StatusCode.Delete
 
     # set particle depth to max depth if it's too deep
-    particles.dz = np.where(
-        particles.z + particles.dz < particles.max_depth,
-        particles.max_depth - particles.z,
-        particles.dz,
-    )
+    too_deep = particles.z + particles.dz < particles.max_depth
+    particles.dz[too_deep] = particles.max_depth - particles.z[too_deep]
 
 
 # =====================================================
@@ -100,7 +94,6 @@ class XBTInstrument(Instrument):
             expedition,
             variables,
             add_bathymetry=True,
-            allow_time_extrapolation=True,
             verbose_progress=False,
             fetch_spec=FetchSpec(),
             from_data=from_data,
@@ -158,7 +151,7 @@ class XBTInstrument(Instrument):
             x=[xbt.spacetime.location.lon for xbt in measurements],
             y=[xbt.spacetime.location.lat for xbt in measurements],
             z=[xbt.min_depth for xbt in measurements],
-            t=[np.datetime64(xbt.spacetime.time) for xbt in measurements],
+            t=[xbt.spacetime.time for xbt in measurements],
             max_depth=max_depths,
             min_depth=[xbt.min_depth for xbt in measurements],
             fall_speed=[xbt.fall_speed for xbt in measurements],

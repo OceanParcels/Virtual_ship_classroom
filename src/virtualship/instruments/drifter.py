@@ -49,20 +49,15 @@ _DRIFTER_NONSENSOR_VARIABLES = [
 
 
 def _sample_temperature(particles, fieldset):
-    particles.temperature = fieldset.T[
-        particles.t, particles.z, particles.y, particles.x
-    ]
+    particles.temperature = fieldset.T[particles]
 
 
 def _check_lifetime(particles, fieldset):
     particles_wlifetime = particles[particles.has_lifetime == 1]
 
     particles_wlifetime.age += particles_wlifetime.dt
-    particles_wlifetime.state = np.where(
-        particles_wlifetime.age >= particles_wlifetime.lifetime,
-        StatusCode.Delete,
-        particles_wlifetime.state,
-    )
+    finished = particles_wlifetime.age >= particles_wlifetime.lifetime
+    particles_wlifetime.state[finished] = StatusCode.Delete
 
 
 # =====================================================
@@ -100,7 +95,6 @@ class DrifterInstrument(Instrument):
             expedition,
             variables,
             add_bathymetry=False,
-            allow_time_extrapolation=False,
             verbose_progress=True,
             fetch_spec=fetch_spec,
             from_data=from_data,
@@ -140,7 +134,7 @@ class DrifterInstrument(Instrument):
             y=lat_release,
             x=lon_release,
             z=[drifter.depth for drifter in measurements],
-            t=[np.datetime64(drifter.spacetime.time) for drifter in measurements],
+            t=[drifter.spacetime.time for drifter in measurements],
             has_lifetime=[
                 1 if drifter.lifetime is not None else 0 for drifter in measurements
             ],

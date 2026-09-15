@@ -54,68 +54,60 @@ _CTD_NONSENSOR_VARIABLES = [
 
 
 def _sample_temperature(particles, fieldset):
-    particles.temperature = fieldset.T[
-        particles.t, particles.z, particles.y, particles.x
-    ]
+    particles.temperature = fieldset.T[particles]
 
 
 def _sample_salinity(particles, fieldset):
-    particles.salinity = fieldset.S[particles.t, particles.z, particles.y, particles.x]
+    particles.salinity = fieldset.S[particles]
 
 
 ## bgc variables
 
 
 def _sample_o2(particles, fieldset):
-    particles.o2 = fieldset.o2[particles.t, particles.z, particles.y, particles.x]
+    particles.o2 = fieldset.o2[particles]
 
 
 def _sample_chlorophyll(particles, fieldset):
-    particles.chl = fieldset.chl[particles.t, particles.z, particles.y, particles.x]
+    particles.chl = fieldset.chl[particles]
 
 
 def _sample_nitrate(particles, fieldset):
-    particles.no3 = fieldset.no3[particles.t, particles.z, particles.y, particles.x]
+    particles.no3 = fieldset.no3[particles]
 
 
 def _sample_phosphate(particles, fieldset):
-    particles.po4 = fieldset.po4[particles.t, particles.z, particles.y, particles.x]
+    particles.po4 = fieldset.po4[particles]
 
 
 def _sample_ph(particles, fieldset):
-    particles.ph = fieldset.ph[particles.t, particles.z, particles.y, particles.x]
+    particles.ph = fieldset.ph[particles]
 
 
 def _sample_phytoplankton(particles, fieldset):
-    particles.phyc = fieldset.phyc[particles.t, particles.z, particles.y, particles.x]
+    particles.phyc = fieldset.phyc[particles]
 
 
 def _sample_primary_production(particles, fieldset):
-    particles.nppv = fieldset.nppv[particles.t, particles.z, particles.y, particles.x]
+    particles.nppv = fieldset.nppv[particles]
 
 
 ## cast
 
 
 def _ctd_cast(particles, fieldset):
-    particles_lowering = particles[particles.raising == 0]
-    particles_raising = particles[particles.raising == 1]
+    ptcls_lowering = particles[particles.raising == 0]
+    ptcls_raising = particles[particles.raising == 1]
 
     # lowering
-    particles_lowering.dz += -particles_lowering.winch_speed * particles_lowering.dt
-    particles_lowering.raising = np.where(
-        particles_lowering.z + particles_lowering.dz < particles_lowering.max_depth,
-        1,
-        particles_lowering.raising,
-    )
+    ptcls_lowering.dz += -ptcls_lowering.winch_speed * ptcls_lowering.dt
+    next_phase = ptcls_lowering.z + ptcls_lowering.dz <= ptcls_lowering.max_depth
+    ptcls_lowering.raising[next_phase] = 1
 
     # raising
-    particles_raising.dz += particles_raising.winch_speed * particles_raising.dt
-    particles_raising.state = np.where(
-        particles_raising.z + particles_raising.dz > particles_raising.min_depth,
-        StatusCode.Delete,
-        particles_raising.state,
-    )
+    ptcls_raising.dz += ptcls_raising.winch_speed * ptcls_raising.dt
+    finished = ptcls_raising.z + ptcls_raising.dz >= ptcls_raising.min_depth
+    ptcls_raising.state[finished] = StatusCode.Delete
 
 
 # =====================================================
@@ -147,7 +139,6 @@ class CTDInstrument(Instrument):
             expedition,
             variables,
             add_bathymetry=True,
-            allow_time_extrapolation=True,
             verbose_progress=False,
             fetch_spec=FetchSpec(),
             from_data=from_data,
@@ -203,7 +194,7 @@ class CTDInstrument(Instrument):
             x=[ctd.spacetime.location.lon for ctd in measurements],
             y=[ctd.spacetime.location.lat for ctd in measurements],
             z=[ctd.min_depth for ctd in measurements],
-            t=[np.datetime64(ctd.spacetime.time) for ctd in measurements],
+            t=[ctd.spacetime.time for ctd in measurements],
             max_depth=max_depths,
             min_depth=[ctd.min_depth for ctd in measurements],
             winch_speed=[WINCH_SPEED for _ in measurements],
