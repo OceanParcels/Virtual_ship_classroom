@@ -28,7 +28,7 @@ Below is a screenshot of a North Sea expedition. This example expedition departs
 
 Feel free to design your expedition as you wish! There is no need to copy these sampling sites in your own expeditions.
 
-![MFP North Sea cruise plan screenshot](image-1.png)
+![MFP North Sea cruise plan screenshot](_images/mfp_route.png)
 
 ### Export the coordinates
 
@@ -70,7 +70,7 @@ virtualship plan EXPEDITION_NAME
 
 The planning tool should look something like this and offers an intuitive way to make your selections:
 
-![example_plan_app](example_plan_app.gif)
+![example_plan_app](_images/example_plan_app.gif)
 
 ### Ship speed
 
@@ -128,6 +128,17 @@ Click [here](https://virtualship.readthedocs.io/en/latest/user-guide/assignments
 
 You can make instrument selections for each waypoint in the same sub-panels as the [waypoint time](#waypoint-datetimes) selection by simply switching each on or off. Multiple instruments are allowed at each waypoint.
 
+```{important}
+**Argo Floats** are the most computationally intensive of the instrument types. They move and sample in full lat/lon/depth space across time, thus requiring large datasets from Copernicus Marine to be streamed and processed.
+
+Depending on the power of the machine that you are running VirtualShip on, this may cause the simulation to run out of RAM and crash. Therefore we recommend the following points:
+
+- Deploying Argo Floats at waypoints which are far apart in space and/or time will require more RAM than deploying them at waypoints which are closer together. **Consider deploying only from one waypoint or multiple which are reasonably close together**.
+- As a rule of thumb, we find that an Argo Float simulation with the default lifetime (63 days) and sensor configuration (i.e. `TEMPERATURE`, `SALINITY`) will require at least 8GB of available RAM to run successfully. Scaling these factors up or down will increase or decrease the RAM requirements accordingly.
+
+This is a performance bottle-neck which we hope to address in future versions of VirtualShip, but for now it is likely necessary to adhere to these points if you wish to run Argo Floats.
+```
+
 ### Save changes
 
 When you are happy with your ship configuration and schedule plan, press _Save Changes_.
@@ -152,7 +163,7 @@ If this is your first time running VirtualShip, you will be prompted to enter yo
 
 Your command line output should look something like this...
 
-![GIF of example VirtualShip log output](example_log_instruments.gif)
+![GIF of example VirtualShip log output](_images/example_log_instruments.gif)
 
 Small simulations (e.g. small space-time domains and fewer instrument deployments) will be relatively fast. For large, complex expeditions, it _could_ take up to an hour to simulate the measurements depending on your choices. Waiting for simulation is a great time to practice your level of patience. A skill much needed in oceanographic fieldwork ;-)
 
