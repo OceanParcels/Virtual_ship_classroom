@@ -90,8 +90,8 @@ class XBTInstrument(Instrument):
         """Initialize XBTInstrument."""
         variables = expedition.instruments_config.xbt_config.active_variables()
         fetch_spec = FetchSpec(
-            depth_min=expedition.instruments_config.ctd_config.min_depth_meter,
-            depth_max=expedition.instruments_config.ctd_config.max_depth_meter,
+            depth_min=expedition.instruments_config.xbt_config.min_depth_meter,
+            depth_max=expedition.instruments_config.xbt_config.max_depth_meter,
         )
 
         super().__init__(

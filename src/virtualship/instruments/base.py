@@ -22,6 +22,7 @@ from virtualship.instruments.types import InstrumentType
 from virtualship.utils import (
     COPERNICUSMARINE_PHYS_VARIABLES,
     INSTRUMENT_CLASS_MAP,
+    MAX_CACHE_BYTES,
     _find_files_in_timerange,
     _find_nc_file_with_variable,
     _get_bathy_data,
@@ -209,7 +210,7 @@ class Instrument(abc.ABC):
                 fs = parcels.FieldSet.from_sgrid_conventions(ds_fset)
 
                 # to ChunkCachedArrays for better Dask/memory management
-                fs = fs.to_chunk_cached_arrays()
+                fs = fs.to_chunk_cached_arrays(max_cache_bytes=MAX_CACHE_BYTES)
 
             else:
                 fs = parcels.FieldSet.from_sgrid_conventions(ds_fset)
